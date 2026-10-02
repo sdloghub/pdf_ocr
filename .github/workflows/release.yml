@@ -1,0 +1,44 @@
+name: Build and release Mac app
+on:
+  push:
+    branches: [main]
+    paths: ['**.py', '**.spec', 'requirements.txt', 'assets/**', '.github/workflows/release.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: 'True'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pyinstaller==6.22.3
+      - name: Test workflow
+        run: python -m unittest test_workflow.py
+      - name: Build application
+        run: python -m PyInstaller --noconfirm PDF-OCR.spec
+      - name: Verify bundled SDK
+        run: dist/PDF-OCR.app/Contents/MacOS/PDF-OCR --self-test
+      - name: Package app with blank configuration
+        run: |
+          mkdir -p release
+          ditto -c -k --sequesterRsrc --keepParent dist/PDF-OCR.app release/PDF-OCR-Mac-arm64.zip
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('release/PDF-OCR-Mac-arm64.zip', 'a', compression=zipfile.ZIP_DEFLATED) as z:
+              z.write('config.example.json', 'config.json')
+              z.write('README.md', 'README.md')
+          PY
+          shasum -a 256 release/PDF-OCR-Mac-arm64.zip > release/SHA256SUMS.txt
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.0.0-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" release/PDF-OCR-Mac-arm64.zip release/SHA256SUMS.txt --target "$GITHUB_SHA" --title "PDF OCR for Mac $TAG" --notes "Apple Silicon Mac 应用。支持官方 PaddleOCR-VL-1.6 API、可调批次页数和并发数、断点续跑。解压后保持应用和 config.json 位于同一文件夹，在应用中设置 token。未经 Apple 公证。"

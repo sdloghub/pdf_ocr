@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.env
+ocr_workspace/
+config.json
+dist/
+build/
+build.log
+release/
+.DS_Store
