@@ -114,3 +114,8 @@ python -m PyInstaller --noconfirm PDF-OCR.spec
 ## 下载
 
 Mac 应用见 [GitHub Releases](https://github.com/sdloghub/pdf_ocr/releases)。GitHub Actions 自动测试、打包并发布应用。发布包只带空白 token 模板，不包含 OCR 工作区。
+
+## 输出模式
+
+界面可选择完整 PDF（默认）或分卷 PDF。分卷上限严格为 32,000,000 字节（32 MB），按最终导出文件大小检查，保持页序和文字层。分卷存放于工作区 `分卷_32MB/`，附带页码范围和校验清单。完整结果仍保留在工作区供恢复及重新导出；切换输出方式不重新调用 OCR。单页本身超过上限时明确报错，保留完整结果，不会悄悄降低画质。
+命令行：`python pdf_ocr.py 输入.pdf --output-mode split32`。

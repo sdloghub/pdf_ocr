@@ -132,6 +132,36 @@ class WorkflowTest(unittest.TestCase):
                 asyncio.run(flow.process_batch(work, state, client, None))
                 self.assertEqual(state['completed'], 9)
 
+    def test_size_limited_output(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source.pdf'
+            with pymupdf.open() as doc:
+                for i in range(8):
+                    page = doc.new_page()
+                    page.insert_text((40, 50), f'Page {i + 1}')
+                doc.save(source)
+            # 使用小上限覆盖分卷逻辑，生产上限为 32,000,000 字节。
+            with pymupdf.open(source) as doc, pymupdf.open() as part:
+                part.insert_pdf(doc, from_page=0, to_page=1)
+                limit = len(part.tobytes(garbage=4, deflate=True))
+            target = flow.split_output(source, root/'parts', limit=limit)
+            parts = sorted(target.glob('*.pdf'))
+            self.assertGreater(len(parts), 1)
+            text = ''
+            pages = 0
+            for path in parts:
+                self.assertLessEqual(path.stat().st_size, limit)
+                with pymupdf.open(path) as doc:
+                    pages += len(doc)
+                    text += ''.join(p.get_text() for p in doc)
+            self.assertEqual(pages, 8)
+            self.assertEqual(text, ''.join(f'Page {i + 1}\n' for i in range(8)))
+            self.assertEqual(flow.split_output(source, target, limit=limit), target)
+            with self.assertRaises(ValueError):
+                flow.split_output(source, root/'too-small', limit=100)
+            self.assertFalse((root/'too-small').exists())
+
 
 if __name__ == '__main__':
     unittest.main()

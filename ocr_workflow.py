@@ -148,10 +148,62 @@ async def run_batches(work, state, poll_timeout):
             await process_batch(work, state, client, options)
 
 
+
+def split_output(source, destination, limit=32_000_000):
+    """按最终 PDF 字节数分卷，保留页序；单页超限时明确失败。"""
+    from tempfile import mkdtemp
+    source, destination = Path(source), Path(destination)
+    fingerprint = digest(source)
+    if destination.exists():
+        manifest_path = destination / '分卷清单.json'
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text())
+            if manifest['source_sha256'] == fingerprint and manifest['limit'] == limit:
+                if all((destination / f['name']).stat().st_size <= limit and digest(destination / f['name']) == f['sha256'] for f in manifest['files']):
+                    return destination
+        raise FileExistsError(f'分卷目录已存在且不能复用：{destination}')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(mkdtemp(prefix='.pdf-split-', dir=destination.parent))
+    try:
+        with pymupdf.open(source) as original:
+            start, files = 0, []
+            while start < len(original):
+                def encode(end):
+                    with pymupdf.open() as part:
+                        part.insert_pdf(original, from_page=start, to_page=end - 1)
+                        return part.tobytes(garbage=4, deflate=True)
+                best = encode(start + 1)
+                if len(best) > limit:
+                    raise ValueError(f'第 {start + 1} 页单独导出仍超过 {limit / 1_000_000:g} MB；无法在保持页面内容的条件下分卷。完整 PDF 已保留。')
+                end = start + 1
+                lo, hi = end + 1, len(original)
+                while lo <= hi:
+                    mid = (lo + hi) // 2
+                    candidate = encode(mid)
+                    if len(candidate) <= limit:
+                        best, end = candidate, mid
+                        lo = mid + 1
+                    else:
+                        hi = mid - 1
+                name = f'分卷_{len(files) + 1:03d}.pdf'
+                path = temporary / name
+                path.write_bytes(best)
+                assert path.stat().st_size <= limit
+                files.append(dict(name=name, first_page=start + 1, last_page=end, bytes=len(best), sha256=digest(path)))
+                start = end
+            atomic_json(temporary / '分卷清单.json', dict(source_sha256=fingerprint, limit=limit, files=files))
+        os.replace(temporary, destination)
+        return destination
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+
 def convert(input_pdf, output_pdf=None, *, workspace='ocr_workspace', dpi=300,
-            poll_timeout=600, max_new_tokens=8192, force=False, prepare_only=False, batch_size=30, concurrency=3):
+            poll_timeout=600, max_new_tokens=8192, force=False, prepare_only=False, batch_size=30, concurrency=3, output_mode="single"):
     if isinstance(batch_size, bool) or isinstance(concurrency, bool) or not isinstance(batch_size, int) or not isinstance(concurrency, int) or batch_size < 1 or concurrency < 1:
         raise ValueError('批次页数和并发数必须为正整数')
+    if output_mode not in ('single', 'split32'):
+        raise ValueError('未知输出模式')
     source = Path(input_pdf).resolve()
     if dpi <= 0 or poll_timeout <= 0 or max_new_tokens <= 0:
         raise ValueError('分辨率、超时及生成上限必须为正数')
@@ -205,10 +257,15 @@ def convert(input_pdf, output_pdf=None, *, workspace='ocr_workspace', dpi=300,
             if not os.environ.get('PADDLEOCR_ACCESS_TOKEN'):
                 raise ValueError('请设置 PADDLEOCR_ACCESS_TOKEN；工作区已保存')
             asyncio.run(run_batches(work, state, poll_timeout))
-        if target != work / '已完成.pdf':
+        if output_mode == 'single' and target != work / '已完成.pdf':
             target.parent.mkdir(parents=True, exist_ok=True)
             temp = target.with_suffix('.tmp.pdf')
             shutil.copyfile(work / '已完成.pdf', temp)
             os.replace(temp, target)
-        print(f'全部完成：{target}', flush=True)
+        if output_mode == 'split32':
+            destination = work / '分卷_32MB' if output_pdf is None else target.with_name(target.stem + '_分卷_32MB')
+            result = split_output(work / '已完成.pdf', destination)
+            print(f'分卷输出完成（每份不超过 32 MB）：{result}', flush=True)
+        else:
+            print(f'全部完成：{target}', flush=True)
         return work

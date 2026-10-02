@@ -60,6 +60,7 @@ def main():
     parser.add_argument("input_pdf")
     parser.add_argument("--config", help="token 配置文件，默认脚本旁 config.json")
     parser.add_argument("output_pdf", nargs="?", help="可选最终输出路径")
+    parser.add_argument("--output-mode", choices=["single", "split32"], default="single", help="完整 PDF 或每份不超过 32 MB 的分卷")
     parser.add_argument("--workspace", default="ocr_workspace", help="持久化工作区根目录")
     parser.add_argument("--prepare-only", action="store_true", help="只复制切分，不调用 API")
     parser.add_argument("--batch-size", type=int, default=30, help="每批 PDF 页数")

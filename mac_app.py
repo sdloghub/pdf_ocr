@@ -30,6 +30,12 @@ class App:
         tk.Label(settings, text='并发数').pack(side='left', padx=6)
         self.concurrent_input = tk.Entry(settings, textvariable=self.concurrency, width=8)
         self.concurrent_input.pack(side='left', padx=6)
+        outputs = tk.Frame(self.root)
+        outputs.pack(pady=6)
+        self.output_mode = tk.StringVar(value='single')
+        tk.Label(outputs, text='输出方式').pack(side='left', padx=6)
+        tk.Radiobutton(outputs, text='完整 PDF', variable=self.output_mode, value='single').pack(side='left', padx=6)
+        tk.Radiobutton(outputs, text='分卷 PDF（每份 ≤ 32 MB）', variable=self.output_mode, value='split32').pack(side='left', padx=6)
         row = tk.Frame(self.root)
         row.pack()
         self.choose = tk.Button(row, text='选择 PDF 并开始', command=self.pick)
@@ -104,6 +110,7 @@ class App:
             if batch_size < 1 or concurrency < 1:
                 raise ValueError('每批页数和并发数必须为正整数。')
             config = load_token()
+            output_mode = self.output_mode.get()
         except ValueError as exc:
             messagebox.showerror('请检查配置', str(exc))
             return
@@ -114,7 +121,7 @@ class App:
         def worker():
             try:
                 with contextlib.redirect_stdout(self):
-                    convert(path, workspace=config.parent/'ocr_workspace', batch_size=batch_size, concurrency=concurrency)
+                    convert(path, workspace=config.parent/'ocr_workspace', batch_size=batch_size, concurrency=concurrency, output_mode=output_mode)
             except Exception as exc:
                 self.write(f'任务停止：{exc}\n再次选择同一文件可续跑。\n')
             finally:
