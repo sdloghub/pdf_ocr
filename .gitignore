@@ -1,10 +1,14 @@
 .venv/
 __pycache__/
 .env
+tmp/
 ocr_workspace/
 config.json
 dist/
 build/
 build.log
 release/
-.DS_Store
+
+PDF-OCR.app/
+分块输出/
+config.previous.json

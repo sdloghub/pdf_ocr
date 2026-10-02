@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 
 from app_config import default_config, load_token
-from ocr_workflow import convert
+from ocr_workflow import convert, split_without_ocr
 
 
 class App:
@@ -33,9 +33,10 @@ class App:
         outputs = tk.Frame(self.root)
         outputs.pack(pady=6)
         self.output_mode = tk.StringVar(value='single')
-        tk.Label(outputs, text='输出方式').pack(side='left', padx=6)
+        tk.Label(outputs, text='处理方式').pack(side='left', padx=6)
         tk.Radiobutton(outputs, text='完整 PDF', variable=self.output_mode, value='single').pack(side='left', padx=6)
         tk.Radiobutton(outputs, text='分卷 PDF（每份 ≤ 32 MB）', variable=self.output_mode, value='split32').pack(side='left', padx=6)
+        tk.Radiobutton(outputs, text='仅拆分（不 OCR）', variable=self.output_mode, value='split_only').pack(side='left', padx=6)
         row = tk.Frame(self.root)
         row.pack()
         self.choose = tk.Button(row, text='选择 PDF 并开始', command=self.pick)
@@ -73,13 +74,13 @@ class App:
         self.root.after(100, self.poll)
 
     def pick(self):
-        path = filedialog.askopenfilename(filetypes=[('PDF', '*.pdf')])
-        if path:
-            self.start(path)
+        paths = filedialog.askopenfilenames(filetypes=[('PDF', '*.pdf')])
+        if paths:
+            self.start(paths)
 
     def open_documents(self, *paths):
         if paths:
-            self.start(paths[0])
+            self.start(paths)
 
     def token_dialog(self):
         if self.busy:
@@ -104,12 +105,14 @@ class App:
         if self.busy:
             messagebox.showinfo('任务运行中', '当前 PDF 完成后再选择其他文件。')
             return
+        paths = [path] if isinstance(path, str) else list(path)
+        mode = self.output_mode.get()
         try:
-            batch_size = int(self.batch_size.get())
-            concurrency = int(self.concurrency.get())
+            batch_size = 30 if mode == 'split_only' else int(self.batch_size.get())
+            concurrency = 3 if mode == 'split_only' else int(self.concurrency.get())
             if batch_size < 1 or concurrency < 1:
                 raise ValueError('每批页数和并发数必须为正整数。')
-            config = load_token()
+            config = default_config() if mode == 'split_only' else load_token()
             output_mode = self.output_mode.get()
         except ValueError as exc:
             messagebox.showerror('请检查配置', str(exc))
@@ -121,7 +124,11 @@ class App:
         def worker():
             try:
                 with contextlib.redirect_stdout(self):
-                    convert(path, workspace=config.parent/'ocr_workspace', batch_size=batch_size, concurrency=concurrency, output_mode=output_mode)
+                    if output_mode == 'split_only':
+                        split_without_ocr(paths, config.parent/'分块输出')
+                    else:
+                        for source in paths:
+                            convert(source, workspace=config.parent/'ocr_workspace', batch_size=batch_size, concurrency=concurrency, output_mode=output_mode)
             except Exception as exc:
                 self.write(f'任务停止：{exc}\n再次选择同一文件可续跑。\n')
             finally:

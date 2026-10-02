@@ -58,6 +58,7 @@ def convert(*args, **kwargs):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input_pdf")
+    parser.add_argument("--split-only", action="store_true", help="仅拆分原 PDF，无需 token 或 OCR")
     parser.add_argument("--config", help="token 配置文件，默认脚本旁 config.json")
     parser.add_argument("output_pdf", nargs="?", help="可选最终输出路径")
     parser.add_argument("--output-mode", choices=["single", "split32"], default="single", help="完整 PDF 或每份不超过 32 MB 的分卷")
@@ -73,6 +74,11 @@ def main():
     try:
         settings = vars(args)
         config = settings.pop("config")
+        split_only = settings.pop('split_only')
+        if split_only:
+            from ocr_workflow import split_without_ocr
+            split_without_ocr(args.input_pdf, args.output_pdf or '分块输出')
+            return
         if not args.prepare_only:
             from app_config import load_token
             load_token(config)

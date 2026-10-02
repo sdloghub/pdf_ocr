@@ -71,11 +71,10 @@ PDF 操作在一个事件循环中串行执行，仅 API 上传和等待并发�
 SDK：https://www.paddleocr.ai/main/version3.x/inference_deployment/serving/paddleocr_official_api/python.html
 
 验证：`python -m unittest test_workflow.py`。使用模拟 API 检查并发、切分、续跑和合并顺序，不消耗配额。
-本次优先实现命令行工作流，拖放应用尚未打包。
 
 ## Mac 应用与 token 配置
 
-打包结果为 `dist/PDF-OCR.app`（Apple Silicon / arm64）。
+本地应用为第一层的 `PDF-OCR.app`（Apple Silicon / arm64）。重新构建的结果生成于 `dist/PDF-OCR.app`。
 把 `PDF-OCR.app` 和同目录的 `config.json` 一起放在可写文件夹中。
 双击应用，点击“设置 API Token”保存令牌，再选择 PDF 开始；
 也可以把 PDF 拖到 Finder 中的应用图标上。
@@ -119,3 +118,8 @@ Mac 应用见 [GitHub Releases](https://github.com/sdloghub/pdf_ocr/releases)。
 
 界面可选择完整 PDF（默认）或分卷 PDF。分卷上限严格为 32,000,000 字节（32 MB），按最终导出文件大小检查，保持页序和文字层。分卷存放于工作区 `分卷_32MB/`，附带页码范围和校验清单。完整结果仍保留在工作区供恢复及重新导出；切换输出方式不重新调用 OCR。单页本身超过上限时明确报错，保留完整结果，不会悄悄降低画质。
 命令行：`python pdf_ocr.py 输入.pdf --output-mode split32`。
+
+## 仅拆分原 PDF（不 OCR）
+
+应用已放在程序文件夹第一层，配置及工作区也放在应用旁。选择“仅拆分（不 OCR）”后，可一次选择多个 PDF；原件不修改，输出到应用旁的 `分块输出/`。每个文件严格小于 32,000,000 字节，无需 token，不调用 OCR。同一原件再次拆分复用校验通过的输出。单页超限时明确报错。
+命令行：`python pdf_ocr.py 输入.pdf --split-only`。

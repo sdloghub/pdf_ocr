@@ -198,6 +198,22 @@ def split_output(source, destination, limit=32_000_000):
         if temporary.exists():
             shutil.rmtree(temporary)
 
+
+def split_without_ocr(inputs, output_root):
+    """仅本地分卷：无需 token，不导入或请求 OCR SDK。"""
+    inputs = [inputs] if isinstance(inputs, (str, Path)) else list(inputs)
+    outputs = []
+    for item in inputs:
+        source = Path(item).resolve()
+        with pymupdf.open(source) as doc:
+            if not doc.is_pdf or doc.needs_pass or len(doc) == 0:
+                raise ValueError(f'需要非加密且至少一页的 PDF：{source.name}')
+        destination = Path(output_root).resolve() / f'{source.stem}_{digest(source)[:12]}'
+        print(f'仅拆分：{source.name}', flush=True)
+        outputs.append(split_output(source, destination, limit=31_999_999))
+        print(f'拆分完成：{destination}', flush=True)
+    return outputs
+
 def convert(input_pdf, output_pdf=None, *, workspace='ocr_workspace', dpi=300,
             poll_timeout=600, max_new_tokens=8192, force=False, prepare_only=False, batch_size=30, concurrency=3, output_mode="single"):
     if isinstance(batch_size, bool) or isinstance(concurrency, bool) or not isinstance(batch_size, int) or not isinstance(concurrency, int) or batch_size < 1 or concurrency < 1:

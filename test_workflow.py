@@ -162,6 +162,27 @@ class WorkflowTest(unittest.TestCase):
                 flow.split_output(source, root/'too-small', limit=100)
             self.assertFalse((root/'too-small').exists())
 
+    def test_split_without_token_or_ocr(self):
+        with TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(directory)
+            inputs = []
+            for name in ['one', 'two']:
+                source = root / (name + '.pdf')
+                with pymupdf.open() as doc:
+                    page = doc.new_page()
+                    page.insert_text((40, 50), name)
+                    doc.save(source)
+                inputs.append(source)
+            before = [p.read_bytes() for p in inputs]
+            with patch.dict('os.environ', {}, clear=True), patch.object(flow, 'run_batches', side_effect=AssertionError('不应调用 OCR')):
+                outputs = flow.split_without_ocr(inputs, root/'outputs')
+                self.assertEqual(len(outputs), 2)
+                for i, target in enumerate(outputs):
+                    with pymupdf.open(target/'分卷_001.pdf') as doc:
+                        self.assertIn(inputs[i].stem, doc[0].get_text())
+                    self.assertLess((target/'分卷_001.pdf').stat().st_size, 32_000_000)
+                self.assertEqual(before, [p.read_bytes() for p in inputs])
+
 
 if __name__ == '__main__':
     unittest.main()
